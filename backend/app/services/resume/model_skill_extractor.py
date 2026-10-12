@@ -1,4 +1,6 @@
+
 from gliner import GLiNER
+import math
 
 
 # ============================================================
@@ -6,10 +8,7 @@ from gliner import GLiNER
 # ============================================================
 
 MODEL_NAME = "urchade/gliner_medium-v2.1"
-
-model = GLiNER.from_pretrained(
-    MODEL_NAME
-)
+model = GLiNER.from_pretrained(MODEL_NAME)
 
 
 # ============================================================
@@ -25,7 +24,7 @@ ENTITY_LABELS = [
     "devops tool",
     "software tool",
     "technology",
-    "technical skill"
+    "technical skill",
 ]
 
 
@@ -48,7 +47,7 @@ NON_SKILL_TERMS = {
     "technical skills",
     "technical skill",
     "frameworks",
-    "libraries"
+    "libraries",
 }
 
 
@@ -57,47 +56,36 @@ NON_SKILL_TERMS = {
 # ============================================================
 
 SKILL_NORMALIZATION = {
-
-    # React
     "react.js": "React",
     "reactjs": "React",
     "react": "React",
 
-    # Node.js
     "node": "Node.js",
     "nodejs": "Node.js",
     "node.js": "Node.js",
 
-    # Express
     "express": "Express.js",
     "express.js": "Express.js",
 
-    # HTML
     "html5": "HTML",
     "html": "HTML",
 
-    # CSS
     "css3": "CSS",
     "css": "CSS",
 
-    # JavaScript
     "javascript": "JavaScript",
 
-    # Git
     "github": "GitHub",
     "git": "Git",
 
-    # Cloud
     "aws": "AWS",
     "gcp": "GCP",
 
-    # Databases
     "mysql": "MySQL",
     "mongodb": "MongoDB",
     "postgresql": "PostgreSQL",
     "sqlite": "SQLite",
 
-    # Programming languages
     "python": "Python",
     "java": "Java",
     "c++": "C++",
@@ -108,41 +96,32 @@ SKILL_NORMALIZATION = {
     "go": "Go",
     "rust": "Rust",
 
-    # Frameworks
     "django": "Django",
     "spring": "Spring",
     "spring boot": "Spring Boot",
 
-    # DevOps / Cloud
     "docker": "Docker",
     "kubernetes": "Kubernetes",
     "terraform": "Terraform",
 
-    # Distributed systems / data
     "kafka": "Kafka",
     "spark": "Spark",
 
-    # Tools
     "grpc": "gRPC",
     "datadog": "Datadog",
     "firebase": "Firebase",
 
-    # Database
     "sql": "SQL",
 
-    # APIs
     "rest api": "REST API",
     "rest apis": "REST APIs",
 
-    # Authentication
     "oauth": "OAuth",
     "oauth 2.0": "OAuth 2.0",
 
-    # AI / ML
     "machine learning": "Machine Learning",
     "artificial intelligence": "Artificial Intelligence",
-    "natural language processing":
-        "Natural Language Processing",
+    "natural language processing": "Natural Language Processing",
 }
 
 
@@ -151,8 +130,7 @@ SKILL_NORMALIZATION = {
 # ============================================================
 
 def normalize_skill(skill):
-
-    if not skill:
+    if not isinstance(skill, str):
         return None
 
     skill = skill.strip()
@@ -160,57 +138,79 @@ def normalize_skill(skill):
     if not skill:
         return None
 
-    key = skill.lower()
+    key = skill.casefold()
 
-    # Remove generic/non-skill terms
     if key in NON_SKILL_TERMS:
         return None
 
-    return SKILL_NORMALIZATION.get(
-        key,
-        skill
-    )
+    return SKILL_NORMALIZATION.get(key, skill)
+
+
+# ============================================================
+# VALIDATE THRESHOLD
+# ============================================================
+
+def validate_threshold(threshold):
+    if (
+        isinstance(threshold, bool)
+        or not isinstance(threshold, (int, float))
+        or not math.isfinite(threshold)
+        or not 0.0 <= threshold <= 1.0
+    ):
+        raise ValueError(
+            "threshold must be a finite number between 0.0 and 1.0"
+        )
 
 
 # ============================================================
 # EXTRACT SKILLS USING GLINER
 # ============================================================
 
-def extract_skills_with_gliner(text):
+def extract_skills_with_gliner(text, threshold=0.30):
+    # Validate even when the input text is empty.
+    validate_threshold(threshold)
 
-    if not text:
+    if not isinstance(text, str) or not text.strip():
         return []
 
     entities = model.predict_entities(
         text,
         ENTITY_LABELS,
-        threshold=0.45
+        threshold=threshold,
     )
 
     skills = []
+    seen_skills = set()
 
     for entity in entities:
+        raw_skill = entity.get("text", "")
 
-        skill = entity["text"].strip()
-
-        normalized_skill = normalize_skill(
-            skill
-        )
-
-        if not normalized_skill:
+        if not isinstance(raw_skill, str):
             continue
 
-        if normalized_skill not in skills:
+        # Split merged multiline or comma-separated skill entities.
+        parts = (
+            raw_skill
+            .replace("\r\n", "\n")
+            .replace("\r", "\n")
+            .replace("\n", ",")
+            .split(",")
+        )
 
-            skills.append(
-                normalized_skill
-            )
+        for part in parts:
+            normalized_skill = normalize_skill(part)
 
-    skills.sort(
-        key=lambda x: x.lower()
-    )
+            if not normalized_skill:
+                continue
 
-    return skills
+            # Deduplicate case-insensitively.
+            key = normalized_skill.casefold()
+
+            if key not in seen_skills:
+                seen_skills.add(key)
+                skills.append(normalized_skill)
+
+    return sorted(skills, key=str.casefold)
 
 
 # ============================================================
@@ -219,29 +219,21 @@ def extract_skills_with_gliner(text):
 
 def get_claimed_skills_with_gliner(
     text,
-    section_name="technical_skills"
+    section_name="technical_skills",
+    threshold=0.30,
 ):
-
     skills = extract_skills_with_gliner(
-        text
+        text,
+        threshold=threshold,
     )
 
-    claimed_skills = []
-
-    for skill in skills:
-
-        claimed_skills.append({
-
+    return [
+        {
             "skill": skill,
-
             "source": "resume",
-
             "section": section_name,
-
             "claimed": True,
-
-            "extraction_method": "GLiNER"
-
-        })
-
-    return claimed_skills
+            "extraction_method": "GLiNER",
+        }
+        for skill in skills
+    ]
