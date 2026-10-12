@@ -1,10 +1,10 @@
-from app.services.resume_parser import (
+from app.services.resume.resume_parser import (
     extract_text_from_pdf,
     clean_text,
     extract_sections
 )
 
-from app.services.skill_extractor import (
+from app.services.resume.skill_extractor import (
     get_claimed_skills
 )
 
@@ -22,7 +22,7 @@ from app.services.skill_gap import (
 # ---------------------------------
 
 pdf_text = extract_text_from_pdf(
-    "uploads/Vinay_Nishad_Resume_.pdf"
+    "uploads/resume1.pdf"
 )
 
 pdf_text = clean_text(pdf_text)

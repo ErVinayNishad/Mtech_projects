@@ -1,69 +1,38 @@
-from app.services.resume_parser import (
-    extract_text_from_pdf,
-    clean_text,
-    extract_sections
+from app.services.resume.model_skill_extractor import (
+    extract_skills_with_gliner,
+    get_claimed_skills_with_gliner
 )
 
-from app.services.llm_skill_extractor import (
-    extract_skills_with_model,
-    get_model_claimed_skills
-)
+# ============================================================
+# TEST TEXT
+# ============================================================
+
+technical_skills_text = """
+Programming Languages: Python, Java, JavaScript, C++
+Frontend: HTML, CSS, React, Bootstrap
+Backend: Node.js, Express.js, Django
+Databases: MySQL, MongoDB, SQL
+Tools & Platforms: Git, GitHub, Docker, AWS
+"""
 
 
 # ============================================================
-# LOAD RESUME
+# GLINER SKILL EXTRACTION
 # ============================================================
 
-pdf_text = extract_text_from_pdf(
-    "uploads/resume1.pdf"
-)
-
-pdf_text = clean_text(
-    pdf_text
-)
-
-
-# ============================================================
-# EXTRACT SECTIONS
-# ============================================================
-
-sections = extract_sections(
-    pdf_text
-)
-
-
-# ============================================================
-# TECHNICAL SKILLS SECTION
-# ============================================================
-
-technical_skills_text = "\n".join(
-    sections.get(
-        "technical_skills",
-        []
-    )
+skills = extract_skills_with_gliner(
+    technical_skills_text
 )
 
 
 print("\n----- TECHNICAL SKILLS TEXT -----")
 
-print(
-    technical_skills_text
-)
+print(technical_skills_text)
 
 
-# ============================================================
-# GLINER EXTRACTION
-# ============================================================
-
-skills = extract_skills_with_model(
-    technical_skills_text
-)
-
-
-print("\n----- GLINER EXTRACTED SKILLS -----")
+print("\n----- GLINER FILTERED SKILLS -----")
 
 for skill in skills:
-
     print(skill)
 
 
@@ -71,7 +40,7 @@ for skill in skills:
 # STRUCTURED CLAIMED SKILLS
 # ============================================================
 
-claimed_skills = get_model_claimed_skills(
+claimed_skills = get_claimed_skills_with_gliner(
     technical_skills_text
 )
 
@@ -79,5 +48,4 @@ claimed_skills = get_model_claimed_skills(
 print("\n----- GLINER STRUCTURED CLAIMED SKILLS -----")
 
 for item in claimed_skills:
-
     print(item)

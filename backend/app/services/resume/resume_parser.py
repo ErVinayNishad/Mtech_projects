@@ -1,5 +1,6 @@
-import pymupdf
 import re
+
+import pymupdf
 from docx import Document
 
 
@@ -8,6 +9,10 @@ from docx import Document
 # ============================================================
 
 def extract_text_from_pdf(file_path):
+    """
+    Extract text from a PDF file.
+    """
+
     doc = pymupdf.open(file_path)
 
     text = ""
@@ -28,11 +33,22 @@ def extract_text_from_pdf(file_path):
 # ============================================================
 
 def extract_text_from_docx(file_path):
+    """
+    Extract text from a DOCX file.
+
+    Extracts:
+    - Normal paragraphs
+    - Table contents
+    """
+
     document = Document(file_path)
 
     text = ""
 
+    # --------------------------------------------------------
     # Normal paragraphs
+    # --------------------------------------------------------
+
     for paragraph in document.paragraphs:
 
         value = paragraph.text.strip()
@@ -40,7 +56,10 @@ def extract_text_from_docx(file_path):
         if value:
             text += value + "\n"
 
+    # --------------------------------------------------------
     # Tables
+    # --------------------------------------------------------
+
     for table in document.tables:
 
         for row in table.rows:
@@ -65,6 +84,13 @@ def extract_text_from_docx(file_path):
 # ============================================================
 
 def clean_text(text):
+    """
+    Clean extracted resume text.
+
+    - Replaces tabs with spaces
+    - Removes extra spaces
+    - Removes empty lines
+    """
 
     lines = []
 
@@ -73,7 +99,7 @@ def clean_text(text):
         # Replace tabs
         line = line.replace("\t", " ")
 
-        # Normalize spaces
+        # Normalize multiple spaces
         line = " ".join(line.split())
 
         if line:
@@ -87,50 +113,65 @@ def clean_text(text):
 # ============================================================
 
 def normalize_heading(text):
+    """
+    Normalize resume section headings.
+
+    Handles headings such as:
+
+    PROFESSIONAL SUMMARY
+    P R O F E S S I O N A L   S U M M A R Y
+    C O R E   C O M P E T E N C I E S
+    """
 
     if not text:
         return ""
 
     text = text.strip()
 
+    # --------------------------------------------------------
     # Remove common heading symbols
+    # --------------------------------------------------------
+
     text = re.sub(
         r"^[•▪●○◦\-:|]+\s*",
         "",
         text
     )
 
+    # --------------------------------------------------------
     # Lowercase
+    # --------------------------------------------------------
+
     text = text.lower()
 
-    # Normalize multiple spaces
+    # --------------------------------------------------------
+    # Normalize spaces
+    # --------------------------------------------------------
+
     text = " ".join(text.split())
 
     # --------------------------------------------------------
     # Handle fully spaced headings
     #
-    # P R O F E S S I O N A L D E V E L O P M E N T
-    # C O R E C O M P E T E N C I E S
-    # W O R K H I S T O R Y
-    # A C T I V I T I E S
+    # Example:
+    # P R O F E S S I O N A L
     # --------------------------------------------------------
 
     tokens = text.split()
 
     if len(tokens) >= 3:
 
-        # If every token is a single alphabetic character
         if all(
             len(token) == 1 and token.isalpha()
             for token in tokens
         ):
-
             text = "".join(tokens)
 
     # --------------------------------------------------------
     # Handle partially spaced headings
     #
-    # C O R E  C O M P E T E N C I E S
+    # Example:
+    # C O R E   C O M P E T E N C I E S
     # --------------------------------------------------------
 
     parts = re.split(r"\s{2,}", text)
@@ -146,8 +187,7 @@ def normalize_heading(text):
             if (
                 len(tokens) >= 3
                 and all(
-                    len(token) == 1
-                    and token.isalpha()
+                    len(token) == 1 and token.isalpha()
                     for token in tokens
                 )
             ):
@@ -163,7 +203,7 @@ def normalize_heading(text):
         text = " ".join(fixed_parts)
 
     # --------------------------------------------------------
-    # Remove remaining repeated spaces
+    # Final space normalization
     # --------------------------------------------------------
 
     text = " ".join(text.split())
@@ -176,6 +216,9 @@ def normalize_heading(text):
 # ============================================================
 
 def get_section_name(line):
+    """
+    Identify the normalized section name of a resume heading.
+    """
 
     normalized = normalize_heading(line)
 
@@ -352,12 +395,6 @@ def get_section_name(line):
         "contact": "personal_details",
         "contact information": "personal_details",
         "contact details": "personal_details",
-
-        # ----------------------------------------------------
-        # Activities
-        # ----------------------------------------------------
-
-        "activities": "activities",
     }
 
     return section_headings.get(normalized)
@@ -368,6 +405,9 @@ def get_section_name(line):
 # ============================================================
 
 def extract_sections(text):
+    """
+    Extract resume sections based on recognized headings.
+    """
 
     sections = {}
 
@@ -393,7 +433,6 @@ def extract_sections(text):
             current_section = section_name
 
             if current_section not in sections:
-
                 sections[current_section] = []
 
             continue
@@ -403,7 +442,6 @@ def extract_sections(text):
         # ----------------------------------------------------
 
         if current_section:
-
             sections[current_section].append(line)
 
     return sections
@@ -414,6 +452,14 @@ def extract_sections(text):
 # ============================================================
 
 def extract_personal_details(text):
+    """
+    Extract basic personal information:
+
+    - Name
+    - Email
+    - Phone
+    - Location
+    """
 
     personal_details = {
         "name": None,
@@ -447,9 +493,7 @@ def extract_personal_details(text):
 
         if match:
 
-            personal_details["email"] = (
-                match.group(0)
-            )
+            personal_details["email"] = match.group(0)
 
             break
 
@@ -469,7 +513,10 @@ def extract_personal_details(text):
         r"\+?\d[\d\s().-]{8,}\d"
     ]
 
+    # --------------------------------------------------------
     # First search labelled phone
+    # --------------------------------------------------------
+
     for line in lines:
 
         lower_line = line.lower()
@@ -496,10 +543,12 @@ def extract_personal_details(text):
                     break
 
             if personal_details["phone"]:
-
                 break
 
+    # --------------------------------------------------------
     # Search anywhere if not found
+    # --------------------------------------------------------
+
     if personal_details["phone"] is None:
 
         for line in lines:
@@ -520,7 +569,6 @@ def extract_personal_details(text):
                     break
 
             if personal_details["phone"]:
-
                 break
 
     # ========================================================
@@ -547,7 +595,10 @@ def extract_personal_details(text):
         "profile"
     ]
 
+    # --------------------------------------------------------
     # Usually name appears near beginning
+    # --------------------------------------------------------
+
     for line in lines[:15]:
 
         lower_line = line.lower()
@@ -632,7 +683,7 @@ def extract_personal_details(text):
 
             location = match.group(1).strip()
 
-            # Remove PDF placeholder icon / bullets
+            # Remove leading symbols / bullets
             location = re.sub(
                 r"^[^\w]+",
                 "",
@@ -714,7 +765,7 @@ def extract_personal_details(text):
             ):
                 continue
 
-            # Ignore placeholder
+            # Ignore placeholders
             if (
                 "complete street address" in lower_line
                 or "city, state zip code" in lower_line
@@ -764,6 +815,7 @@ def extract_personal_details(text):
             # ------------------------------------------------
             # City + State + ZIP pattern
             #
+            # Example:
             # San Jose, CA 95101
             # ------------------------------------------------
 
@@ -781,8 +833,9 @@ def extract_personal_details(text):
                 break
 
             # ------------------------------------------------
-            # Indian style:
+            # Indian style
             #
+            # Example:
             # Indore, Madhya Pradesh, India
             # ------------------------------------------------
 

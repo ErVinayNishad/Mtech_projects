@@ -1,16 +1,30 @@
-from app.services.skill_extractor import (
-    extract_skills,
-    get_claimed_skills
+# ============================================================
+# IMPORTS
+# ============================================================
+
+from app.services.resume.skill_evidence import (
+    extract_skill_evidence
 )
 
-from app.services.resume_parser import (
+from app.services.resume.skill_extractor import (
+    extract_skills
+)
+
+from app.services.resume.model_skill_extractor import (
+    get_claimed_skills_with_gliner
+)
+
+from app.services.resume.resume_parser import (
     extract_text_from_pdf,
     extract_text_from_docx,
     clean_text,
     extract_sections,
     extract_personal_details
 )
-from app.services.resume_profile import build_resume_profile
+
+from app.services.resume.resume_profile import (
+    build_resume_profile
+)
 
 
 # ============================================================
@@ -22,9 +36,11 @@ pdf_text = extract_text_from_pdf(
 )
 
 pdf_text = clean_text(pdf_text)
-# -----------------------------
-# PERSONAL DETAILS TEST
-# -----------------------------
+
+
+# ============================================================
+# PDF PERSONAL DETAILS
+# ============================================================
 
 personal_details = extract_personal_details(
     pdf_text
@@ -33,18 +49,142 @@ personal_details = extract_personal_details(
 print("\n----- PDF PERSONAL DETAILS -----")
 
 for key, value in personal_details.items():
-    print(f"{key}: {value}")
 
-pdf_sections = extract_sections(pdf_text)
+    print(
+        f"{key}: {value}"
+    )
 
-print("----- PDF EXTRACTED SECTIONS -----")
+
+# ============================================================
+# PDF SECTION EXTRACTION
+# ============================================================
+
+pdf_sections = extract_sections(
+    pdf_text
+)
+
+print("\n----- PDF EXTRACTED SECTIONS -----")
 
 for section, content in pdf_sections.items():
 
-    print(f"\n[{section}]")
+    print(
+        f"\n[{section}]"
+    )
 
     for line in content:
+
         print(line)
+
+
+# ============================================================
+# PDF SKILL EXTRACTION
+# ============================================================
+
+technical_skills_text = "\n".join(
+    pdf_sections.get(
+        "technical_skills",
+        []
+    )
+)
+
+skills = extract_skills(
+    technical_skills_text
+)
+
+print("\n----- EXTRACTED PDF SKILLS -----")
+
+for skill in skills:
+
+    print(skill)
+
+
+# ============================================================
+# GLINER CLAIMED SKILLS
+# ============================================================
+
+claimed_skill_data = get_claimed_skills_with_gliner(
+    technical_skills_text
+)
+
+print(
+    "\n----- GLINER STRUCTURED CLAIMED SKILLS -----"
+)
+
+for item in claimed_skill_data:
+
+    print(item)
+
+
+# ============================================================
+# BUILD STRUCTURED RESUME PROFILE
+# ============================================================
+
+resume_profile = build_resume_profile(
+    pdf_sections,
+    claimed_skill_data
+)
+
+print(
+    "\n----- STRUCTURED RESUME PROFILE -----"
+)
+
+
+# ============================================================
+# SKILL EVIDENCE
+# ============================================================
+
+skill_evidence = extract_skill_evidence(
+    pdf_sections,
+    claimed_skill_data
+)
+
+print(
+    "\n----- SKILL EVIDENCE -----"
+)
+
+for item in skill_evidence:
+
+    print(
+        f"\nSkill: {item['skill']}"
+    )
+
+    print(
+        f"Claimed: {item['claimed']}"
+    )
+
+    if item["evidence"]:
+
+        for evidence in item["evidence"]:
+
+            print(
+                f"  [{evidence['section']}] "
+                f"{evidence['text']}"
+            )
+
+    else:
+
+        print(
+            "  No evidence found"
+        )
+
+
+# ============================================================
+# FINAL STRUCTURED PROFILE
+# ============================================================
+
+print(
+    "\n----- FINAL STRUCTURED RESUME PROFILE -----"
+)
+
+for section, content in resume_profile.items():
+
+    print(
+        f"\n[{section}]"
+    )
+
+    for item in content:
+
+        print(item)
 
 
 # ============================================================
@@ -55,36 +195,27 @@ docx_text = extract_text_from_docx(
     "uploads/resume1.docx"
 )
 
-docx_text = clean_text(docx_text)
+docx_text = clean_text(
+    docx_text
+)
 
-docx_sections = extract_sections(docx_text)
+docx_sections = extract_sections(
+    docx_text
+)
 
-print("\n----- DOCX EXTRACTED SECTIONS -----")
+print(
+    "\n----- DOCX EXTRACTED SECTIONS -----"
+)
 
 for section, content in docx_sections.items():
 
-    print(f"\n[{section}]")
+    print(
+        f"\n[{section}]"
+    )
 
     for line in content:
+
         print(line)
-
-
-# ============================================================
-# PDF SKILL EXTRACTION
-# ============================================================
-
-technical_skills_text = "\n".join(
-    pdf_sections.get("technical_skills", [])
-)
-
-skills = extract_skills(
-    technical_skills_text
-)
-
-print("\n----- EXTRACTED PDF SKILLS -----")
-
-for skill in skills:
-    print(skill)
 
 
 # ============================================================
@@ -92,47 +223,20 @@ for skill in skills:
 # ============================================================
 
 docx_technical_skills_text = "\n".join(
-    docx_sections.get("technical_skills", [])
+    docx_sections.get(
+        "technical_skills",
+        []
+    )
 )
 
 docx_skills = extract_skills(
     docx_technical_skills_text
 )
 
-print("\n----- EXTRACTED DOCX SKILLS -----")
+print(
+    "\n----- EXTRACTED DOCX SKILLS -----"
+)
 
 for skill in docx_skills:
+
     print(skill)
-
-
-# ============================================================
-# STRUCTURED CLAIMED SKILLS
-# ============================================================
-
-claimed_skill_data = get_claimed_skills(
-    technical_skills_text
-)
-
-print("\n----- STRUCTURED CLAIMED SKILLS -----")
-
-for item in claimed_skill_data:
-    print(item)
-
-
-# ============================================================
-# STRUCTURED RESUME PROFILE
-# ============================================================
-
-resume_profile = build_resume_profile(
-    pdf_sections,
-    claimed_skill_data
-)
-
-print("\n----- STRUCTURED RESUME PROFILE -----")
-
-for section, content in resume_profile.items():
-
-    print(f"\n[{section}]")
-
-    for item in content:
-        print(item)
