@@ -1,86 +1,52 @@
+
 # ============================================================
 # BUILD STRUCTURED RESUME PROFILE
 # ============================================================
 
 def build_resume_profile(
     sections,
-    claimed_skills=None
+    claimed_skills=None,
+    skill_evidence=None,
 ):
     """
-    Convert extracted resume sections into a structured
-    resume profile.
-
-    Parameters:
-    - sections:
-        Dictionary containing extracted resume sections.
-
-    - claimed_skills:
-        Structured skills extracted from the resume.
-
-    Returns:
-    - Dictionary containing the complete resume profile.
+    Build a structured resume profile containing:
+    - Extracted resume sections
+    - Claimed skills
+    - Evidence found for claimed skills
     """
 
-    # --------------------------------------------------------
-    # Initialize profile structure
-    # --------------------------------------------------------
-
     profile = {
-
         "personal_details": [],
-
         "career_objective": [],
-
         "education": [],
-
         "work_experience": [],
-
         "projects": [],
-
         "technical_skills": [],
-
         "claimed_skills": [],
-
+        "skill_evidence": [],
         "certifications": [],
-
         "achievements": [],
-
         "areas_of_interest": [],
-
         "hobbies_interests": [],
-
-        "languages": []
-
+        "languages": [],
     }
 
-    # --------------------------------------------------------
-    # Copy extracted sections
-    # --------------------------------------------------------
-
-    if sections is None:
+    if not isinstance(sections, dict):
         sections = {}
 
-    for section in profile:
-
-        # claimed_skills is handled separately
-        if section == "claimed_skills":
+    # Copy available extracted sections.
+    for section_name in profile:
+        if section_name in ("claimed_skills", "skill_evidence"):
             continue
 
-        profile[section] = sections.get(
-            section,
-            []
-        )
+        content = sections.get(section_name, [])
+        profile[section_name] = content if content is not None else []
 
-    # --------------------------------------------------------
-    # Add structured claimed skills
-    # --------------------------------------------------------
+    # Store claimed skills separately from evidence.
+    if isinstance(claimed_skills, (list, tuple)):
+        profile["claimed_skills"] = list(claimed_skills)
 
-    if claimed_skills is not None:
-
-        profile["claimed_skills"] = claimed_skills
-
-    # --------------------------------------------------------
-    # Return final profile
-    # --------------------------------------------------------
+    if isinstance(skill_evidence, (list, tuple)):
+        profile["skill_evidence"] = list(skill_evidence)
 
     return profile

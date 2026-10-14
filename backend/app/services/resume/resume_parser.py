@@ -11,6 +11,21 @@ from docx import Document
 def extract_text_from_pdf(file_path):
     """
     Extract text from a PDF file.
+    Ensures the PDF document is closed even if extraction fails.
+    """
+
+    with pymupdf.open(file_path) as doc:
+        text_parts = []
+
+        for page in doc:
+            page_text = page.get_text()
+
+            if page_text:
+                text_parts.append(page_text)
+
+    return "\n".join(text_parts)
+    """
+    Extract text from a PDF file.
     """
 
     doc = pymupdf.open(file_path)

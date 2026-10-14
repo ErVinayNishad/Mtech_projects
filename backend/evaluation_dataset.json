@@ -1,0 +1,61 @@
+{
+  "dataset_name": "resume_skill_extraction_evaluation",
+  "version": "1.0",
+  "status": "preliminary",
+  "samples": [
+    {
+      "id": "resume_pdf_001",
+      "file": "uploads/resume1.pdf",
+      "file_type": "PDF",
+      "expected_skills": [
+        "python",
+        "java",
+        "javascript",
+        "c++",
+        "html",
+        "css",
+        "react",
+        "bootstrap",
+        "node.js",
+        "express.js",
+        "django",
+        "mysql",
+        "mongodb",
+        "sql",
+        "git",
+        "github",
+        "docker",
+        "aws"
+      ]
+    },
+    {
+      "id": "resume_docx_001",
+      "file": "uploads/resume1.docx",
+      "file_type": "DOCX",
+      "expected_skills": [
+        "grpc",
+        "spring boot",
+        "django",
+        "react",
+        "kafka",
+        "spark",
+        "gcp",
+        "aws",
+        "kubernetes",
+        "terraform",
+        "datadog"
+      ]
+    }
+  ],
+  "evaluation_metrics": [
+    "precision",
+    "recall",
+    "f1"
+  ],
+  "notes": [
+    "Expected skills are preliminary manually specified labels.",
+    "Validate annotations against the actual resume text.",
+    "Two samples are insufficient for generalizable conclusions.",
+    "Add more independently labeled resumes before final model selection."
+  ]
+}

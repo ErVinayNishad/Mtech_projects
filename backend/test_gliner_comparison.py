@@ -1,5 +1,7 @@
-
+import json
 from pathlib import Path
+
+import pytest
 
 from app.services.resume.resume_parser import (
     extract_text_from_pdf,
@@ -7,42 +9,59 @@ from app.services.resume.resume_parser import (
     clean_text,
     extract_sections,
 )
-
 from app.services.resume.model_skill_extractor import (
     extract_skills_with_gliner,
 )
-
 from app.services.llm_skill_extractor import (
     extract_skills_with_model,
 )
 
 
 BASE_DIR = Path(__file__).resolve().parent
-
+DATASET_PATH = BASE_DIR / "evaluation_dataset.json"
 MEDIUM_THRESHOLDS = [0.30, 0.35, 0.45]
 
 
+def load_evaluation_dataset():
+    if not DATASET_PATH.is_file():
+        raise FileNotFoundError(
+            f"Evaluation dataset not found: {DATASET_PATH}"
+        )
+
+    with DATASET_PATH.open("r", encoding="utf-8") as file:
+        dataset = json.load(file)
+
+    samples = dataset.get("samples", [])
+
+    if not isinstance(samples, list) or not samples:
+        raise ValueError("Evaluation dataset must contain samples.")
+
+    for sample in samples:
+        required_fields = {
+            "id", "file", "file_type", "expected_skills"
+        }
+
+        if not required_fields.issubset(sample):
+            raise ValueError(
+                f"Invalid dataset sample: {sample.get('id', 'unknown')}"
+            )
+
+        if not isinstance(sample["expected_skills"], list):
+            raise ValueError(
+                f"expected_skills must be a list: {sample['id']}"
+            )
+
+    return dataset
+
+
+DATASET = load_evaluation_dataset()
 EXPECTED_FILES = [
     (
-        "uploads/resume1.pdf",
-        "PDF",
-        {
-            "python", "java", "javascript", "c++",
-            "html", "css", "react", "bootstrap",
-            "node.js", "express.js", "django",
-            "mysql", "mongodb", "sql", "git",
-            "github", "docker", "aws",
-        },
-    ),
-    (
-        "uploads/resume1.docx",
-        "DOCX",
-        {
-            "grpc", "spring boot", "django", "react",
-            "kafka", "spark", "gcp", "aws",
-            "kubernetes", "terraform", "datadog",
-        },
-    ),
+        sample["file"],
+        sample["file_type"],
+        set(sample["expected_skills"]),
+    )
+    for sample in DATASET["samples"]
 ]
 
 
@@ -97,10 +116,11 @@ def evaluate_model(model_name, predicted_skills, expected_skills):
 
     f1 = (
         2 * precision * recall / (precision + recall)
-        if precision + recall else 0.0
+        if precision + recall
+        else 0.0
     )
 
-    result = {
+    return {
         "model": model_name,
         "precision": precision,
         "recall": recall,
@@ -109,17 +129,6 @@ def evaluate_model(model_name, predicted_skills, expected_skills):
         "false_positive": false_positive,
         "missed": missed,
     }
-
-    print(f"\n--- {model_name} ---")
-    print("Predicted:", sorted(predicted))
-    print("Correct:", sorted(correct))
-    print("False positives:", sorted(false_positive))
-    print("Missed:", sorted(missed))
-    print(f"Precision: {precision:.2%}")
-    print(f"Recall:    {recall:.2%}")
-    print(f"F1-score:  {f1:.2%}")
-
-    return result
 
 
 def load_skills_text(file_path, file_type):
@@ -152,26 +161,12 @@ def load_skills_text(file_path, file_type):
 def evaluate_file(relative_path, file_type, expected_skills):
     file_path = BASE_DIR / relative_path
 
-    print("\n" + "=" * 70)
-    print(f"FILE: {file_path.name} | TYPE: {file_type}")
-    print("=" * 70)
-
     if not file_path.is_file():
-        print(f"ERROR: File not found: {file_path}")
-        return []
+        raise FileNotFoundError(f"Resume file not found: {file_path}")
 
-    try:
-        skills_text = load_skills_text(file_path, file_type)
-    except (ValueError, OSError) as error:
-        print(f"ERROR: {error}")
-        return []
-
-    print("\nTechnical skills text:")
-    print(skills_text)
-
+    skills_text = load_skills_text(file_path, file_type)
     results = []
 
-    # Medium model: threshold comparison
     for threshold in MEDIUM_THRESHOLDS:
         predicted = extract_skills_with_gliner(
             skills_text,
@@ -187,7 +182,6 @@ def evaluate_file(relative_path, file_type, expected_skills):
         result["threshold"] = threshold
         results.append(result)
 
-    # Small model: existing default threshold
     predicted_small = extract_skills_with_model(skills_text)
 
     result = evaluate_model(
@@ -202,52 +196,102 @@ def evaluate_file(relative_path, file_type, expected_skills):
     return results
 
 
-def print_summary(results):
+def print_evaluation_report(all_results):
     print("\n" + "=" * 90)
-    print("FINAL COMPARISON SUMMARY")
+    print("GLiNER MODEL COMPARISON REPORT")
+    print(f"Dataset: {DATASET.get('dataset_name', 'unnamed')}")
+    print(f"Samples: {len(DATASET['samples'])}")
     print("=" * 90)
 
-    if not results:
-        print("No results available.")
-        return
+    for result in all_results:
+        print(f"\nResume: {result['file']}")
+        print(f"Model: {result['model']}")
+        print(f"Precision: {result['precision']:.2%}")
+        print(f"Recall:    {result['recall']:.2%}")
+        print(f"F1 Score:  {result['f1']:.2%}")
+        print(f"Correct skills: {sorted(result['correct'])}")
+        print(f"False positives: {sorted(result['false_positive'])}")
+        print(f"Missed skills: {sorted(result['missed'])}")
 
-    print(
-        f"{'File':<18}{'Model':<32}"
-        f"{'Precision':>12}{'Recall':>10}{'F1':>10}"
-    )
-    print("-" * 82)
+    print("\n" + "-" * 90)
+    print("AVERAGE F1 BY MODEL / THRESHOLD")
+    print("-" * 90)
+
+    groups = {}
+
+    for result in all_results:
+        groups.setdefault(result["model"], []).append(result["f1"])
+
+    for model_name, scores in groups.items():
+        average_f1 = sum(scores) / len(scores)
+        print(f"{model_name:<40} Average F1: {average_f1:.2%}")
+
+    print("\nNote: Results are preliminary.")
+    print("The current dataset contains only two resumes.")
+
+
+@pytest.mark.parametrize(
+    "relative_path,file_type,expected_skills",
+    EXPECTED_FILES,
+    ids=[sample["id"] for sample in DATASET["samples"]],
+)
+def test_model_comparison_returns_metrics(
+    relative_path,
+    file_type,
+    expected_skills,
+):
+    results = evaluate_file(relative_path, file_type, expected_skills)
+
+    assert len(results) == len(MEDIUM_THRESHOLDS) + 1
 
     for result in results:
-        print(
-            f"{result['file']:<18}"
-            f"{result['model']:<32}"
-            f"{result['precision']:>11.2%} "
-            f"{result['recall']:>9.2%} "
-            f"{result['f1']:>9.2%}"
-        )
+        assert 0.0 <= result["precision"] <= 1.0
+        assert 0.0 <= result["recall"] <= 1.0
+        assert 0.0 <= result["f1"] <= 1.0
+        assert isinstance(result["correct"], set)
+        assert isinstance(result["false_positive"], set)
+        assert isinstance(result["missed"], set)
 
-    print("\nMEDIUM MODEL AVERAGE F1")
 
-    for threshold in MEDIUM_THRESHOLDS:
-        matching = [
-            item for item in results
-            if item["model"] == f"Medium v2.1 | threshold={threshold}"
-        ]
+@pytest.mark.parametrize(
+    "predicted,expected,expected_f1",
+    [
+        (["Python", "Django"], ["Python", "Django"], 1.0),
+        (["Python"], ["Python", "Django"], 2 / 3),
+        ([], ["Python"], 0.0),
+        (["Python"], [], 0.0),
+    ],
+)
+def test_evaluate_model_f1(predicted, expected, expected_f1):
+    result = evaluate_model("Test model", predicted, expected)
+    assert result["f1"] == pytest.approx(expected_f1)
 
-        if matching:
-            average_f1 = sum(item["f1"] for item in matching) / len(matching)
-            print(
-                f"Threshold {threshold}: {average_f1:.2%} "
-                f"({len(matching)} file(s))"
-            )
+
+def test_normalize_skills_handles_aliases_and_duplicates():
+    result = normalize_skills([
+        "React.js",
+        "react",
+        "NodeJS",
+        "Node.js",
+        " HTML5 ",
+        "",
+        None,
+    ])
+
+    assert result == {"react", "node.js", "html"}
+
+
+def test_load_skills_text_rejects_unsupported_file_type():
+    with pytest.raises(ValueError, match="Unsupported file type"):
+        load_skills_text(Path("resume.txt"), "TXT")
 
 
 if __name__ == "__main__":
     all_results = []
 
-    for relative_path, file_type, expected in EXPECTED_FILES:
+    for relative_path, file_type, expected_skills in EXPECTED_FILES:
         all_results.extend(
-            evaluate_file(relative_path, file_type, expected)
+            evaluate_file(relative_path, file_type, expected_skills)
         )
 
-    print_summary(all_results)
+    print_evaluation_report(all_results)

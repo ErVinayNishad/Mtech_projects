@@ -1,18 +1,19 @@
-
-from gliner import GLiNER
+﻿from gliner import GLiNER
 import math
 
 
 # ============================================================
-# LOAD GLINER MODEL
+# CONFIGURATION
 # ============================================================
 
 MODEL_NAME = "urchade/gliner_medium-v2.1"
+DEFAULT_THRESHOLD = 0.30
+
 model = GLiNER.from_pretrained(MODEL_NAME)
 
 
 # ============================================================
-# ENTITY LABELS
+# ENTITY LABELS - ORIGINAL 9 LABELS
 # ============================================================
 
 ENTITY_LABELS = [
@@ -59,33 +60,24 @@ SKILL_NORMALIZATION = {
     "react.js": "React",
     "reactjs": "React",
     "react": "React",
-
     "node": "Node.js",
     "nodejs": "Node.js",
     "node.js": "Node.js",
-
     "express": "Express.js",
     "express.js": "Express.js",
-
     "html5": "HTML",
     "html": "HTML",
-
     "css3": "CSS",
     "css": "CSS",
-
     "javascript": "JavaScript",
-
     "github": "GitHub",
     "git": "Git",
-
     "aws": "AWS",
     "gcp": "GCP",
-
     "mysql": "MySQL",
     "mongodb": "MongoDB",
     "postgresql": "PostgreSQL",
     "sqlite": "SQLite",
-
     "python": "Python",
     "java": "Java",
     "c++": "C++",
@@ -95,33 +87,26 @@ SKILL_NORMALIZATION = {
     "php": "PHP",
     "go": "Go",
     "rust": "Rust",
-
     "django": "Django",
     "spring": "Spring",
     "spring boot": "Spring Boot",
-
     "docker": "Docker",
     "kubernetes": "Kubernetes",
     "terraform": "Terraform",
-
     "kafka": "Kafka",
     "spark": "Spark",
-
     "grpc": "gRPC",
     "datadog": "Datadog",
     "firebase": "Firebase",
-
     "sql": "SQL",
-
     "rest api": "REST API",
     "rest apis": "REST APIs",
-
     "oauth": "OAuth",
     "oauth 2.0": "OAuth 2.0",
-
     "machine learning": "Machine Learning",
     "artificial intelligence": "Artificial Intelligence",
     "natural language processing": "Natural Language Processing",
+    "bootstrap": "Bootstrap",
 }
 
 
@@ -143,7 +128,8 @@ def normalize_skill(skill):
     if key in NON_SKILL_TERMS:
         return None
 
-    return SKILL_NORMALIZATION.get(key, skill)
+    # Return only recognized and normalized technical skills.
+    return SKILL_NORMALIZATION.get(key)
 
 
 # ============================================================
@@ -166,51 +152,58 @@ def validate_threshold(threshold):
 # EXTRACT SKILLS USING GLINER
 # ============================================================
 
-def extract_skills_with_gliner(text, threshold=0.30):
-    # Validate even when the input text is empty.
+def extract_skills_with_gliner(
+    text,
+    threshold=DEFAULT_THRESHOLD,
+):
     validate_threshold(threshold)
 
     if not isinstance(text, str) or not text.strip():
         return []
 
-    entities = model.predict_entities(
-        text,
-        ENTITY_LABELS,
-        threshold=threshold,
-    )
+    prediction_texts = [text]
 
-    skills = []
-    seen_skills = set()
-
-    for entity in entities:
-        raw_skill = entity.get("text", "")
-
-        if not isinstance(raw_skill, str):
-            continue
-
-        # Split merged multiline or comma-separated skill entities.
-        parts = (
-            raw_skill
-            .replace("\r\n", "\n")
-            .replace("\r", "\n")
-            .replace("\n", ",")
-            .split(",")
+    # Also evaluate individual lines to recover skills from lists.
+    if "\n" in text or "\r" in text:
+        prediction_texts.extend(
+            line.strip()
+            for line in text.splitlines()
+            if line.strip()
         )
 
-        for part in parts:
-            normalized_skill = normalize_skill(part)
+    skills = {}
 
-            if not normalized_skill:
+    for prediction_text in prediction_texts:
+        entities = model.predict_entities(
+            prediction_text,
+            ENTITY_LABELS,
+            threshold=threshold,
+        )
+
+        for entity in entities:
+            raw_skill = entity.get("text", "")
+
+            if not isinstance(raw_skill, str):
                 continue
 
-            # Deduplicate case-insensitively.
-            key = normalized_skill.casefold()
+            parts = (
+                raw_skill
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .replace("\n", ",")
+                .split(",")
+            )
 
-            if key not in seen_skills:
-                seen_skills.add(key)
-                skills.append(normalized_skill)
+            for part in parts:
+                normalized_skill = normalize_skill(part)
 
-    return sorted(skills, key=str.casefold)
+                if normalized_skill:
+                    skills.setdefault(
+                        normalized_skill.casefold(),
+                        normalized_skill,
+                    )
+
+    return sorted(skills.values(), key=str.casefold)
 
 
 # ============================================================
@@ -220,7 +213,7 @@ def extract_skills_with_gliner(text, threshold=0.30):
 def get_claimed_skills_with_gliner(
     text,
     section_name="technical_skills",
-    threshold=0.30,
+    threshold=DEFAULT_THRESHOLD,
 ):
     skills = extract_skills_with_gliner(
         text,

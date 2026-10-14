@@ -8,11 +8,11 @@ from app.services.resume.skill_extractor import (
     get_claimed_skills
 )
 
-from app.services.jd_skill_extractor import (
+from app.services.job.jd_skill_extractor import (
     extract_required_skills
 )
 
-from app.services.skill_gap import (
+from app.services.skill_analysis.skill_gap import (
     calculate_skill_gap
 )
 

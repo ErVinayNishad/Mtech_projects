@@ -1,17 +1,20 @@
-import re
 
-from app.services.resume.model_skill_extractor import (
-    extract_skills_with_gliner,
-)
+import re
 
 
 def normalize_evidence_skill(skill):
     """Normalize a skill for case-insensitive comparison."""
+    if not isinstance(skill, str):
+        return ""
+
     return re.sub(r"\s+", " ", skill.strip()).casefold()
 
 
 def skill_appears_in_text(skill, text):
-    """Check direct skill mentions without matching partial skill names."""
+    """Match complete skill names without matching partial names."""
+    if not isinstance(skill, str) or not isinstance(text, str):
+        return False
+
     skill = skill.strip()
 
     if not skill:
@@ -19,7 +22,7 @@ def skill_appears_in_text(skill, text):
 
     escaped_skill = re.escape(skill)
 
-    # Prevent C from matching C++ or C#.
+    # C must not match C++, C#, or words beginning with C.
     if skill.casefold() == "c":
         pattern = r"(?<!\w)c(?![\w+#])"
     else:
@@ -30,22 +33,28 @@ def skill_appears_in_text(skill, text):
 
 def extract_skill_evidence(sections, claimed_skills):
     """
-    Find evidence for claimed skills in selected resume sections.
+    Find direct evidence for claimed skills in relevant resume sections.
 
-    GLiNER processes each valid resume line once.
-    Direct text matching supplements model detection.
+    Skills listed only under technical_skills are claims, not evidence
+    of practical use. Evidence is searched in experience, projects,
+    certifications, and career objective.
     """
 
-    evidence_sections = [
+    if not isinstance(sections, dict):
+        sections = {}
+
+    if not isinstance(claimed_skills, (list, tuple)):
+        claimed_skills = []
+
+    evidence_sections = (
         "work_experience",
         "projects",
         "certifications",
         "career_objective",
-    ]
+    )
 
-    detected_lines = []
+    evidence_lines = []
 
-    # Process each resume line once.
     for section_name in evidence_sections:
         lines = sections.get(section_name, [])
 
@@ -56,26 +65,14 @@ def extract_skill_evidence(sections, claimed_skills):
             continue
 
         for line in lines:
-            if not isinstance(line, str) or not line.strip():
-                continue
-
-            detected_skills = extract_skills_with_gliner(line)
-
-            normalized_skills = {
-                normalize_evidence_skill(skill)
-                for skill in detected_skills
-                if isinstance(skill, str) and skill.strip()
-            }
-
-            detected_lines.append({
-                "section": section_name,
-                "text": line,
-                "skills": normalized_skills,
-            })
+            if isinstance(line, str) and line.strip():
+                evidence_lines.append({
+                    "section": section_name,
+                    "text": line.strip(),
+                })
 
     skill_evidence = []
 
-    # Match each claimed skill against the processed lines.
     for item in claimed_skills:
         if not isinstance(item, dict):
             continue
@@ -85,33 +82,30 @@ def extract_skill_evidence(sections, claimed_skills):
         if not isinstance(skill, str) or not skill.strip():
             continue
 
-        skill_key = normalize_evidence_skill(skill)
         evidence = []
-        seen_evidence = set()
+        seen = set()
 
-        for line_data in detected_lines:
-            model_match = skill_key in line_data["skills"]
-
-            direct_match = skill_appears_in_text(
+        for line_data in evidence_lines:
+            if not skill_appears_in_text(
                 skill,
                 line_data["text"],
+            ):
+                continue
+
+            evidence_key = (
+                line_data["section"],
+                line_data["text"].casefold(),
             )
 
-            if model_match or direct_match:
-                evidence_key = (
-                    line_data["section"],
-                    line_data["text"].strip().casefold(),
-                )
+            if evidence_key in seen:
+                continue
 
-                if evidence_key in seen_evidence:
-                    continue
+            seen.add(evidence_key)
 
-                seen_evidence.add(evidence_key)
-
-                evidence.append({
-                    "section": line_data["section"],
-                    "text": line_data["text"],
-                })
+            evidence.append({
+                "section": line_data["section"],
+                "text": line_data["text"],
+            })
 
         skill_evidence.append({
             "skill": skill,

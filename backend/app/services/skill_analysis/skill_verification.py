@@ -1,72 +1,61 @@
+
 # ============================================================
-# SKILL VERIFICATION
+# RESUME EVIDENCE ASSESSMENT
 # ============================================================
 
-def verify_claimed_skills(
-    skill_evidence
-):
+def verify_claimed_skills(skill_evidence):
     """
-    Verify resume-claimed skills based on
-    available resume evidence.
-
-    A skill is considered:
-    - verified      -> evidence found
-    - unverified    -> no evidence found
+    Assess resume evidence for skills explicitly marked as claimed.
+    This does not verify actual skill proficiency.
     """
 
-    verified_skills = []
-    unverified_skills = []
+    if not isinstance(skill_evidence, (list, tuple)):
+        skill_evidence = []
+
+    skills_with_evidence = []
+    skills_without_evidence = []
 
     for item in skill_evidence:
+        if not isinstance(item, dict):
+            continue
 
-        skill = item["skill"]
+        # Ignore skills that are not explicitly claimed.
+        if item.get("claimed") is not True:
+            continue
 
-        evidence = item.get(
-            "evidence",
-            []
-        )
+        skill = item.get("skill")
+
+        if not isinstance(skill, str) or not skill.strip():
+            continue
+
+        skill = skill.strip()
+
+        evidence = item.get("evidence", [])
+        if not isinstance(evidence, list):
+            evidence = []
+
+        result = {
+            "skill": skill,
+            "evidence": evidence,
+            "resume_evidence_found": bool(evidence),
+        }
 
         if evidence:
-
-            verified_skills.append({
-                "skill": skill,
-                "verified": True,
-                "evidence": evidence
-            })
-
+            skills_with_evidence.append(result)
         else:
+            skills_without_evidence.append(result)
 
-            unverified_skills.append({
-                "skill": skill,
-                "verified": False,
-                "evidence": []
-            })
-
-    total_claimed = (
-        len(verified_skills)
-        + len(unverified_skills)
-    )
-
-    if total_claimed == 0:
-        verification_percentage = 0.0
-    else:
-        verification_percentage = (
-            len(verified_skills)
-            / total_claimed
-        ) * 100
+    total = len(skills_with_evidence) + len(skills_without_evidence)
+    with_evidence = len(skills_with_evidence)
 
     return {
-        "verified_skills": verified_skills,
-        "unverified_skills": unverified_skills,
-        "total_claimed_skills": total_claimed,
-        "total_verified_skills": len(
-            verified_skills
+        "skills_with_resume_evidence": skills_with_evidence,
+        "skills_without_resume_evidence": skills_without_evidence,
+        "total_claimed_skills": total,
+        "total_with_evidence": with_evidence,
+        "total_without_evidence": len(skills_without_evidence),
+        "resume_evidence_coverage_percentage": round(
+            (with_evidence / total * 100) if total else 0.0,
+            2,
         ),
-        "total_unverified_skills": len(
-            unverified_skills
-        ),
-        "verification_percentage": round(
-            verification_percentage,
-            2
-        )
     }

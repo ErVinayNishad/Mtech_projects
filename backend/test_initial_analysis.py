@@ -1,4 +1,4 @@
-from app.services.initial_analysis import analyze_skill_gap
+from app.services.skill_analysis.initial_analysis import analyze_skill_gap
 
 
 # -----------------------------

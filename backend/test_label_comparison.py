@@ -1,5 +1,7 @@
-
+import json
 from pathlib import Path
+
+import pytest
 
 from app.services.resume.resume_parser import (
     extract_text_from_pdf,
@@ -7,19 +9,16 @@ from app.services.resume.resume_parser import (
     clean_text,
     extract_sections,
 )
-
 from app.services.resume.model_skill_extractor import (
     model,
     normalize_skill,
-    ENTITY_LABELS,
 )
 
 
 BASE_DIR = Path(__file__).resolve().parent
+DATASET_PATH = BASE_DIR / "evaluation_dataset.json"
 THRESHOLD = 0.35
 
-
-# Original labels before expansion
 ORIGINAL_LABELS = [
     "programming language",
     "framework",
@@ -32,17 +31,8 @@ ORIGINAL_LABELS = [
     "technical skill",
 ]
 
-# Expanded labels currently added to the model file
 EXPANDED_LABELS = [
-    "programming language",
-    "framework",
-    "library",
-    "database",
-    "cloud platform",
-    "devops tool",
-    "software tool",
-    "technology",
-    "technical skill",
+    *ORIGINAL_LABELS,
     "web technology",
     "web development technology",
     "data processing framework",
@@ -51,27 +41,46 @@ EXPANDED_LABELS = [
 ]
 
 
+def load_evaluation_dataset():
+    if not DATASET_PATH.is_file():
+        raise FileNotFoundError(
+            f"Evaluation dataset not found: {DATASET_PATH}"
+        )
+
+    with DATASET_PATH.open("r", encoding="utf-8") as file:
+        dataset = json.load(file)
+
+    samples = dataset.get("samples", [])
+
+    if not isinstance(samples, list) or not samples:
+        raise ValueError("Evaluation dataset must contain samples.")
+
+    for sample in samples:
+        required_fields = {
+            "id", "file", "file_type", "expected_skills"
+        }
+
+        if not required_fields.issubset(sample):
+            raise ValueError(
+                f"Invalid dataset sample: {sample.get('id', 'unknown')}"
+            )
+
+        if not isinstance(sample["expected_skills"], list):
+            raise ValueError(
+                f"expected_skills must be a list: {sample['id']}"
+            )
+
+    return dataset
+
+
+DATASET = load_evaluation_dataset()
 EXPECTED_FILES = [
     (
-        "uploads/resume1.pdf",
-        "PDF",
-        {
-            "python", "java", "javascript", "c++",
-            "html", "css", "react", "bootstrap",
-            "node.js", "express.js", "django",
-            "mysql", "mongodb", "sql", "git",
-            "github", "docker", "aws",
-        },
-    ),
-    (
-        "uploads/resume1.docx",
-        "DOCX",
-        {
-            "grpc", "spring boot", "django", "react",
-            "kafka", "spark", "gcp", "aws",
-            "kubernetes", "terraform", "datadog",
-        },
-    ),
+        sample["file"],
+        sample["file_type"],
+        set(sample["expected_skills"]),
+    )
+    for sample in DATASET["samples"]
 ]
 
 
@@ -89,13 +98,16 @@ def normalize_for_evaluation(skills):
         "css3": "css",
     }
 
-    for skill in skills:
+    for skill in skills or []:
         if not isinstance(skill, str):
             continue
 
-        # Handle a multiline entity such as "Kafka\nSpark".
-        parts = skill.replace("\r\n", "\n").replace("\r", "\n")
-        parts = parts.replace("\n", ",").split(",")
+        parts = (
+            skill.replace("\r\n", "\n")
+            .replace("\r", "\n")
+            .replace("\n", ",")
+            .split(",")
+        )
 
         for part in parts:
             item = part.strip().lower()
@@ -158,8 +170,10 @@ def load_skills_text(relative_path, file_type):
 
     if file_type == "PDF":
         text = extract_text_from_pdf(str(file_path))
-    else:
+    elif file_type == "DOCX":
         text = extract_text_from_docx(str(file_path))
+    else:
+        raise ValueError(f"Unsupported file type: {file_type}")
 
     text = clean_text(text)
     sections = extract_sections(text)
@@ -168,7 +182,9 @@ def load_skills_text(relative_path, file_type):
     if isinstance(section, str):
         skills_text = section
     else:
-        skills_text = "\n".join(str(item) for item in section if item)
+        skills_text = "\n".join(
+            str(item) for item in section if item
+        )
 
     if not skills_text.strip():
         raise ValueError(
@@ -179,76 +195,108 @@ def load_skills_text(relative_path, file_type):
 
 
 def print_result(label_name, result):
-    print(f"\n--- {label_name} ---")
+    print(f"\n{label_name}")
     print(f"Precision: {result['precision']:.2%}")
     print(f"Recall:    {result['recall']:.2%}")
-    print(f"F1-score:  {result['f1']:.2%}")
-    print("Correct:", sorted(result["correct"]))
-    print("False positives:", sorted(result["false_positive"]))
-    print("Missed:", sorted(result["missed"]))
+    print(f"F1 Score:  {result['f1']:.2%}")
+    print(f"Correct skills: {sorted(result['correct'])}")
+    print(f"False positives: {sorted(result['false_positive'])}")
+    print(f"Missed skills: {sorted(result['missed'])}")
 
 
-def main():
-    all_results = {}
+def run_label_comparison(relative_path, file_type, expected):
+    skills_text = load_skills_text(relative_path, file_type)
 
-    print(f"Threshold used: {THRESHOLD}")
-    print(f"Original label count: {len(ORIGINAL_LABELS)}")
-    print(f"Expanded label count: {len(EXPANDED_LABELS)}")
+    original_predictions = extract_with_labels(
+        skills_text,
+        ORIGINAL_LABELS,
+    )
+    expanded_predictions = extract_with_labels(
+        skills_text,
+        EXPANDED_LABELS,
+    )
 
-    for relative_path, file_type, expected in EXPECTED_FILES:
-        print("\n" + "=" * 70)
-        print(f"FILE: {relative_path}")
-        print("=" * 70)
+    original_result = evaluate(original_predictions, expected)
+    expanded_result = evaluate(expanded_predictions, expected)
 
-        try:
-            skills_text = load_skills_text(relative_path, file_type)
-        except (FileNotFoundError, ValueError) as error:
-            print(f"ERROR: {error}")
-            continue
+    print("\n" + "=" * 75)
+    print(f"Resume: {relative_path}")
+    print(f"Threshold: {THRESHOLD}")
+    print(f"Dataset: {DATASET.get('dataset_name', 'unnamed')}")
+    print("=" * 75)
 
-        original_predictions = extract_with_labels(
-            skills_text,
-            ORIGINAL_LABELS,
-        )
+    print_result(
+        f"Original labels ({len(ORIGINAL_LABELS)})",
+        original_result,
+    )
+    print_result(
+        f"Expanded labels ({len(EXPANDED_LABELS)})",
+        expanded_result,
+    )
 
-        expanded_predictions = extract_with_labels(
-            skills_text,
-            EXPANDED_LABELS,
-        )
+    difference = expanded_result["f1"] - original_result["f1"]
+    print(f"\nF1 difference (expanded - original): {difference:+.2%}")
 
-        original_result = evaluate(original_predictions, expected)
-        expanded_result = evaluate(expanded_predictions, expected)
+    return original_result, expanded_result
 
-        print_result("Original 9 labels", original_result)
-        print_result("Expanded labels", expanded_result)
 
-        all_results.setdefault("original", []).append(original_result)
-        all_results.setdefault("expanded", []).append(expanded_result)
+@pytest.mark.parametrize(
+    "relative_path,file_type,expected",
+    EXPECTED_FILES,
+    ids=[sample["id"] for sample in DATASET["samples"]],
+)
+def test_original_and_expanded_label_comparison(
+    relative_path,
+    file_type,
+    expected,
+):
+    original_result, expanded_result = run_label_comparison(
+        relative_path,
+        file_type,
+        expected,
+    )
 
-    print("\n" + "=" * 70)
-    print("OVERALL COMPARISON")
-    print("=" * 70)
+    for result in (original_result, expanded_result):
+        assert 0.0 <= result["precision"] <= 1.0
+        assert 0.0 <= result["recall"] <= 1.0
+        assert 0.0 <= result["f1"] <= 1.0
 
-    for label_set in ("original", "expanded"):
-        results = all_results.get(label_set, [])
 
-        if not results:
-            print(f"{label_set}: no files evaluated")
-            continue
+@pytest.mark.parametrize(
+    "predicted,expected,expected_f1",
+    [
+        (["Python", "Django"], ["Python", "Django"], 1.0),
+        (["Python"], ["Python", "Django"], 2 / 3),
+        ([], ["Python"], 0.0),
+        (["Python"], [], 0.0),
+    ],
+)
+def test_evaluation_f1_calculation(predicted, expected, expected_f1):
+    result = evaluate(predicted, expected)
+    assert result["f1"] == pytest.approx(expected_f1)
 
-        avg_f1 = sum(result["f1"] for result in results) / len(results)
-        avg_precision = sum(
-            result["precision"] for result in results
-        ) / len(results)
-        avg_recall = sum(
-            result["recall"] for result in results
-        ) / len(results)
 
-        print(f"\n{label_set.upper()} LABELS")
-        print(f"Average precision: {avg_precision:.2%}")
-        print(f"Average recall:    {avg_recall:.2%}")
-        print(f"Average F1-score:  {avg_f1:.2%}")
+def test_normalization_handles_aliases_and_duplicates():
+    result = normalize_for_evaluation([
+        "React.js",
+        "react",
+        "NodeJS",
+        "Node.js",
+        "HTML5",
+        "",
+        None,
+    ])
+
+    assert result == {"react", "node.js", "html"}
+
+
+def test_label_sets_have_expected_sizes():
+    assert len(ORIGINAL_LABELS) == 9
+    assert len(EXPANDED_LABELS) == 14
+    assert len(set(EXPANDED_LABELS)) == 14
+    assert set(ORIGINAL_LABELS).issubset(set(EXPANDED_LABELS))
 
 
 if __name__ == "__main__":
-    main()
+    for relative_path, file_type, expected in EXPECTED_FILES:
+        run_label_comparison(relative_path, file_type, expected)
