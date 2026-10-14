@@ -82,3 +82,15 @@ def test_extraction_handles_empty_input():
 
 def test_extraction_handles_invalid_input():
     assert extract_required_skills(None) == []
+
+
+def test_extracts_tensorflow_and_react_native():
+    job_description = """
+    Required skills: Python, TensorFlow, React Native.
+    """
+
+    result = extract_required_skills(job_description)
+    normalized_skills = {skill.casefold() for skill in result}
+
+    assert "tensorflow" in normalized_skills
+    assert "react native" in normalized_skills

@@ -5,6 +5,9 @@ import pymupdf
 from docx import Document
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
+from app.services.feedback.candidate_feedback import (
+    generate_candidate_feedback,
+)
 from app.services.resume.resume_parser import (
     clean_text,
     extract_sections,
@@ -247,6 +250,7 @@ async def analyze_resume_skill_gap(
         )
 
         initial_result = analyze_skill_gap(gap_result)
+        feedback_result = generate_candidate_feedback(initial_result)
 
         return {
             "filename": resume["filename"],
@@ -261,6 +265,7 @@ async def analyze_resume_skill_gap(
             ],
             "skill_gap": gap_result,
             "initial_analysis": initial_result,
+            "candidate_feedback": feedback_result,
             "message": "Initial skill gap analysis completed.",
         }
     finally:
